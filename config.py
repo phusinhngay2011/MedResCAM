@@ -14,6 +14,7 @@ class Config:
     exp_dir = os.path.join(output_dir, exp_name)
     log_dir = os.path.join(exp_dir, "log/")
     model_dir = os.path.join(exp_dir, "model/")
+    seg_pred_dir = os.path.join(exp_dir, "output/")
     study_type = [
         # Original
         # "ELBOW",
@@ -27,7 +28,10 @@ class Config:
         # "FEMUR",
         # "LEG",
         # "KNEE",
-        "Brain"
+
+        "Brain",
+        "Liver",
+        "Retina_RESC",
     ]
 
     acc_path = os.path.join(exp_dir, "acc.csv")

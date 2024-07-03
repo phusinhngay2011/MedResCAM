@@ -1,181 +1,108 @@
 import os
-import cv2
-import numpy as np
-import torch
-import torch.nn.functional as F
 from PIL import Image
+from sklearn.metrics import roc_auc_score
+import torch
+import numpy as np
 from torchvision import transforms
-from tqdm import tqdm
-from model import resnet50
-from utils import get_all_images
-from pathlib import Path
 
 
-Trans = transforms.Compose(
+# Define a transformation to resize the image to 240x240 and convert it to a tensor
+transform = transforms.Compose(
     [
-        transforms.Resize((256, 256)),
-        transforms.CenterCrop(224),
+        # transforms.Resize((256, 256)),
+        # transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ]
 )
 
-Normal = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ]
-)
 
-invTrans = transforms.Compose(
-    [
-        transforms.Normalize(
-            mean=[0.0, 0.0, 0.0], std=[1 / 0.229, 1 / 0.224, 1 / 0.225]
-        ),
-        transforms.Normalize(mean=[-0.485, -0.456, -0.406], std=[1.0, 1.0, 1.0]),
-    ]
-)
-
-bce = torch.nn.BCEWithLogitsLoss()
+def load_image(filepath):
+    """Load an image, resize to 240x240, normalize pixel values to [0, 1], and binarize."""
+    image = Image.open(filepath).convert("L")  # Convert to grayscale image (mode 'L')
+    image = transform(image)  # Resize and convert to tensor
+    image = (image > 0.5).float()  # Binarize the image
+    return image
 
 
-def generate_grad_cam(net, ori_image):
-    """
-    :param net: deep learning network(ResNet DataParallel object)
-    :param ori_image: the original image
-    :return: gradient class activation map
-    """
-    input_image = Trans(ori_image)
-
-    feature = None
-    gradient = None
-
-    def forward_hook(module, input, output):
-        nonlocal feature
-        feature = output.data.cpu().numpy()
-
-    def backward_hook(module, grad_in, grad_out):
-        nonlocal gradient
-        gradient = grad_out[0].data.cpu().numpy()
-
-    # print(net.module)
-    net.module.layer4.register_forward_hook(forward_hook)
-    net.module.layer4.register_full_backward_hook(backward_hook)
-
-    out = net(input_image.unsqueeze(0))
-
-    pred = out.data > 0.5
-
-    net.zero_grad()
-
-    loss = bce(out, pred.float())
-    loss.backward()
-
-    feature = np.squeeze(feature, axis=0)
-    gradient = np.squeeze(gradient, axis=0)
-
-    weights = np.mean(gradient, axis=(1, 2), keepdims=True)
-
-    cam = np.sum(weights * feature, axis=0)
-
-    cam = cv2.resize(cam, (224, 224))
-    cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))
-    cam = 1.0 - cam
-    cam = np.uint8(cam * 255)
-    return cam
+# def load_image(filepath):
+#     """Load an image as a binary tensor, thresholding at 0.5."""
+#     image = Image.open(filepath).convert("L")  # Convert to grayscale image (mode 'L')
+#     image = np.array(image, dtype=np.float32) / 255.0  # Normalize to [0, 1]
+#     image = (image > 0.5).astype(np.float32)  # Binarize the image
+#     return torch.from_numpy(image)
 
 
-def localize(cam_feature, ori_image):
-    """
-    localize the abnormality region using grad_cam feature
-    :param cam_feature: cam_feature by generate_grad_cam
-    :param ori_image: the original image
-    :return: img with heatmap, the abnormality region is highlighted
-    """
-    ori_image = np.array(ori_image)
-    activation_heatmap = cv2.applyColorMap(cam_feature, cv2.COLORMAP_JET)
-    activation_heatmap = cv2.resize(
-        activation_heatmap, (ori_image.shape[1], ori_image.shape[0])
-    )
-    img_with_heatmap = 0.15 * np.float32(activation_heatmap) + 0.85 * np.float32(
-        ori_image
-    )
-    img_with_heatmap = img_with_heatmap / np.max(img_with_heatmap) * 255
-    return img_with_heatmap
+def calculate_iou(preds, labels):
+    """Calculate the Intersection over Union (IoU) for binary images."""
+    intersection = (preds * labels).sum()
+    union = preds.sum() + labels.sum() - intersection
+    iou = intersection / union
+    return iou.item()
 
 
-def heatmap2segment(cam_feature, ori_image):
-    ori_image = np.array(ori_image)
-    cam_feature = cv2.resize(cam_feature, (ori_image.shape[1], ori_image.shape[0]))
+def calculate_mean_iou(gt_folder, pd_folder):
+    """Calculate the mean IoU for all image pairs in the given folders."""
+    gt_files = sorted(os.listdir(gt_folder))
+    pd_files = sorted(os.listdir(pd_folder))
 
-    crop = np.uint8(cam_feature > 0.75 * 255)
+    if len(gt_files) != len(pd_files):
+        raise ValueError(
+            "The number of ground truth and predicted images must be the same."
+        )
 
-    (totalLabels, label_ids, values, centroid) = (
-        cv2.connectedComponentsWithStatsWithAlgorithm(crop, 4, cv2.CV_32S, ccltype=1)
-    )
-    # print(
-    #     f"totalLabels: {totalLabels}, label_ids: {label_ids}, values: {values}, centroid: {centroid}"
-    # )
+    ious = []
+    for gt_file, pd_file in zip(gt_files, pd_files):
+        if gt_file != pd_file:
+            print(1)
+        gt_path = os.path.join(gt_folder, gt_file)
+        pd_path = os.path.join(pd_folder, pd_file)
 
-    output = np.zeros(ori_image.shape, dtype="uint8")
+        gt_image = load_image(gt_path)
+        pd_image = load_image(pd_path)
 
-    # Loop through each component
-    for i in range(1, totalLabels):
-        componentMask = (label_ids == i).astype("uint8") * 255
-        output = cv2.bitwise_or(output, componentMask)
-    output = Image.fromarray(output).convert("RGB")
+        iou = calculate_iou(pd_image, gt_image)
+        ious.append(iou)
 
-    return output
+    mean_iou = sum(ious) / len(ious)
+    return mean_iou
 
+
+def calculate_auc(gt_folder, pd_folder):
+    """Calculate the AUC for all image pairs in the given folders."""
+    gt_files = sorted(os.listdir(gt_folder))
+    pd_files = sorted(os.listdir(pd_folder))
+
+    if len(gt_files) != len(pd_files):
+        raise ValueError(
+            "The number of ground truth and predicted images must be the same."
+        )
+
+    gt_labels = []
+    pd_probs = []
+
+    for gt_file, pd_file in zip(gt_files, pd_files):
+        gt_path = os.path.join(gt_folder, gt_file)
+        pd_path = os.path.join(pd_folder, pd_file)
+
+        gt_image = load_image(gt_path).flatten().numpy()
+        pd_image = load_image(pd_path).flatten().numpy()
+
+        gt_labels.extend(gt_image)
+        pd_probs.extend(pd_image)
+
+    auc = roc_auc_score(gt_labels, pd_probs)
+    return auc
+
+
+# Example usage
+gt_folder = "data/{}_AD/valid/Ungood/anomaly_mask"
+pd_folder = "outputs/{}_AD/v0/"
 
 if __name__ == "__main__":
-    # abs_path = Path("/home/phu/workspace/thesis/sources/mvfa-ad/data/Bone_AD")
-    abs_path = Path("outputs/Brain_AD/v0/")
+    gt_folder = gt_folder.format("Brain")
+    pd_folder = pd_folder.format("Brain")
+    mean_iou = calculate_mean_iou(gt_folder, pd_folder)
+    print(f"Mean IoU: {mean_iou:.4f}")
 
-    net = resnet50(pretrained=True)
-    net.load_state_dict(torch.load("./ckpts/best_model.pth.tar")["net"])
-    net = torch.nn.DataParallel(net)
-    net = net.cuda()
-    net.eval()
-
-    imgs = get_all_images("./data/Brain_AD/valid")
-    imgs = [img for img in imgs if "anomaly_mask" not in img]
-    for img_path in tqdm(imgs, desc="Localize "):
-        ori_image = Image.open(img_path).convert("RGB")
-
-        cam_feature = generate_grad_cam(net, ori_image)
-        heatmap = localize(cam_feature.copy(), ori_image.copy())
-        segment = heatmap2segment(cam_feature, ori_image.convert("L"))
-
-        # rbg_path = abs_path / "test" / "Ungood" / "img" / img_path.split("/")[-1]
-        # mask_path = (
-        #     abs_path / "test" / "Ungood" / "anomaly_mask" / img_path.split("/")[-1]
-        # )
-
-        # os.makedirs(Path(rbg_path).parent, exist_ok=True)
-        # os.makedirs(Path(mask_path).parent, exist_ok=True)
-
-        # ori_image.save(rbg_path)
-        # segment.save(mask_path)
-
-        imgs = [ori_image, Image.fromarray(np.uint8(heatmap)).convert("RGB"), segment]
-
-        # Concat images
-        widths, heights = zip(*(i.size for i in imgs))
-
-        total_width = sum(widths)
-        max_height = max(heights)
-
-        result = Image.new("RGB", (total_width, max_height))
-
-        x_offset = 0
-        for im in imgs:
-            result.paste(im, (x_offset, 0))
-            x_offset += im.size[0]
-
-        new_path = abs_path / img_path.split("/")[-1]
-        os.makedirs(new_path.parent, exist_ok=True)
-
-        cv2.imwrite(str(new_path), np.array(result))
-        # print(f"Done {new_path}")
-        # result2.save(img_path[:-4] + "_w.png")
+    auc = calculate_auc(gt_folder, pd_folder)
+    print(f"AUC: {auc:.4f}")

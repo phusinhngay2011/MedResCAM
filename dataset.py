@@ -89,9 +89,9 @@ class MURA_Dataset(Dataset):
         return sample
 
 
-class BrainMRI_Dataset(Dataset):
+class MedicalDataset(Dataset):
 
-    def __init__(self, data_dir, csv_file, transform=None):
+    def __init__(self, obj, data_dir, csv_file, transform=None):
         """
         :param data_dir: the directory of data
         :param csv_file: the .csv file of data list
@@ -100,8 +100,9 @@ class BrainMRI_Dataset(Dataset):
         self.data_dir = data_dir
         # self.frame = pd.read_csv(os.path.join(data_dir, csv_file), header=None)
         self.frame = pd.read_csv(
-            os.path.join(data_dir, "Brain_AD", csv_file), header=None
+            os.path.join(data_dir, f"{obj}_AD", csv_file), header=None
         )
+        self.obj = obj
         self.transform = transform
 
     def __len__(self):
@@ -113,7 +114,7 @@ class BrainMRI_Dataset(Dataset):
         file_path = os.path.join(self.data_dir, img_filename)
         image = Image.open(file_path).convert("RGB")
         label = self.frame.iloc[idx, 1]
-        study_type = "Brain"
+        study_type = f"{self.obj}"
 
         meta_data = {
             "y_true": label,
@@ -130,7 +131,7 @@ class BrainMRI_Dataset(Dataset):
 
 
 def get_dataloaders(
-    name, batch_size, shuffle, num_workers=32, data_dir=config.data_dir
+    obj, name, batch_size, shuffle, num_workers=32, data_dir=config.data_dir
 ):
     """
     :param name: the phase for transforms
@@ -145,7 +146,6 @@ def get_dataloaders(
                 transforms.Resize((256, 256)),
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
                 transforms.RandomRotation(30),
                 transforms.ToTensor(),
                 transforms.Normalize(
@@ -175,8 +175,11 @@ def get_dataloaders(
         ),
     }
 
-    image_dataset = BrainMRI_Dataset(
-        data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
+    image_dataset = MedicalDataset(
+        obj=obj,
+        data_dir=data_dir,
+        csv_file="%s.csv" % name,
+        transform=data_transforms[name],
     )
     dataloader = DataLoader(
         image_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
@@ -185,17 +188,12 @@ def get_dataloaders(
     return dataloader
 
 
-def calc_data_weights():
+def calc_data_weights(obj):
     """
     :return: the weights of positive and negative data of each type of study
     """
-    frame = pd.read_csv("./data/Brain_AD/train.csv", header=None)
-    # train_imgs = get_all_images("./data/Brain_AD/test")
-
-    # frame = pd.DataFrame({
-    #     "path": train_imgs,
-    #     "abnormal": [0 if "good" in p else 1 for p in train_imgs]
-    # })
+    frame = pd.read_csv(f"./data/{obj}_AD/train.csv", header=None)
+    print(frame)
     n_t = {t: 0 for t in config.study_type}
     a_t = {t: 0 for t in config.study_type}
     w_t0 = {t: 0.0 for t in config.study_type}
@@ -207,15 +205,15 @@ def calc_data_weights():
         # img_filename = frame.iloc[idx, "path"]
         # print(img_filename)
         # study_type = study_type_re.search(img_filename).group(1)
-        study_type = "Brain"
+        study_type = obj
         label = frame.iloc[idx, 1]
         if label == 1:
             a_t[study_type] += 1
         else:
             n_t[study_type] += 1
 
-    for t in config.study_type:
-        w_t0[t] = a_t[t] / (a_t[t] + n_t[t])
-        w_t1[t] = n_t[t] / (a_t[t] + n_t[t])
+    # for t in config.study_type:
+    w_t0[obj] = a_t[obj] / (a_t[obj] + n_t[obj])
+    w_t1[obj] = n_t[obj] / (a_t[obj] + n_t[obj])
 
     return [w_t0, w_t1]

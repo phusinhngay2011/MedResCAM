@@ -14,16 +14,16 @@ from config import config
 from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
-
+from pathlib import Path
 torch.backends.cudnn.benchmark = True
-LOSS_WEIGHTS = calc_data_weights()
 
 
 class Session:
 
-    def __init__(self, config, net=None):
-        self.log_dir = config.log_dir
-        self.model_dir = config.model_dir
+    def __init__(self, obj, config, net=None):
+        self.obj = obj
+        self.log_dir = os.path.join(self.log_dir, self.obj)
+        self.model_dir = os.path.join(self.model_dir, self.obj)
         self.net = net
         self.best_val_acc = 0.0
         self.tb_writer = SummaryWriter(log_dir=self.log_dir)
@@ -38,6 +38,7 @@ class Session:
         }
         print("\n")
         print(f"Save ckpt to {ckp_path}...")
+        os.makedirs(Path(ckp_path).parent, exist_ok=True)
         torch.save(tmp, ckp_path)
         print("Done!")
         print("\n")
@@ -49,7 +50,7 @@ class Session:
         self.best_val_acc = checkpoint["best_val_acc"]
 
 
-def train_model(train_loader, model, optimizer, epoch):
+def train_model(train_loader, model, optimizer, epoch, obj, LOSS_WEIGHTS):
     losses = AverageMeter("epoch_loss")
     accs = AverageMeter("epoch_acc")
 
@@ -107,12 +108,13 @@ def train_model(train_loader, model, optimizer, epoch):
 
 
 # original validation function
-def valid_model(valid_loader, model, optimizer, epoch):
+def valid_model(valid_loader, model, optimizer, epoch, obj, LOSS_WEIGHTS):
     # using model to predict, based on dataloader
     losses = AverageMeter("epoch_loss")
     accs = AverageMeter("epoch_acc")
     model.eval()
 
+    config.study_type = [obj]
     st_corrects = {st: 0 for st in config.study_type}
     nr_stype = {st: 0 for st in config.study_type}
     study_out = {}  # study level output
@@ -182,7 +184,7 @@ def valid_model(valid_loader, model, optimizer, epoch):
     }
 
     for x in study_out.keys():
-        st_corrects["Brain"] += study_preds[x]
+        st_corrects[x] += study_preds[x]
 
     # acc for each study type
     avg_corrects = {st: st_corrects[st] / nr_stype[st] for st in config.study_type}
@@ -229,21 +231,26 @@ def valid_model(valid_loader, model, optimizer, epoch):
             "epoch_auc": [outspects["epoch_auc"]],
         }
     )
-    if os.path.isfile(config.acc_path):
-        csv = pd.read_csv(config.acc_path)
-        pd.concat([csv, df]).to_csv(config.acc_path, index=False)
+    acc_path = config.acc_path.split("/")
+    name = obj + acc_path[-1]
+    csv_path = Path("/".join(acc_path[:-1])) / name
+    if os.path.isfile(csv_path):
+        csv = pd.read_csv(csv_path)
+        pd.concat([csv, df]).to_csv(csv_path, index=False)
     else:
-        df.to_csv(config.acc_path, index=False)
+        df.to_csv(csv_path, index=False)
 
     return outspects
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--obj", default="Brain", type=str, help="Obj")
+
     parser.add_argument("--epochs", default=50, type=int, help="epoch number")
 
     parser.add_argument(
-        "-b", "--batch_size", default=8, type=int, help="mini-batch size"
+        "-b", "--batch_size", default=16, type=int, help="mini-batch size"
     )
 
     parser.add_argument(
@@ -272,6 +279,8 @@ def main():
     args = parser.parse_args()
     print(args)
 
+    LOSS_WEIGHTS = calc_data_weights(args.obj)
+
     config.exp_name = args.exp_name
     config.make_dir()
     save_args(args, config.log_dir)
@@ -283,12 +292,14 @@ def main():
         net = resnet101(pretrained=True)
 
     net = net.cuda()
-    sess = Session(config, net=net)
+    sess = Session(args.obj, config, net=net)
 
     # get dataloader
-    train_loader = get_dataloaders("train", batch_size=args.batch_size, shuffle=True)
+    train_loader = get_dataloaders(args.obj, "train", batch_size=args.batch_size, shuffle=True)
 
-    valid_loader = get_dataloaders("valid", batch_size=args.batch_size, shuffle=False)
+    valid_loader = get_dataloaders(
+        args.obj, "valid", batch_size=args.batch_size, shuffle=False
+    )
 
     if args.continue_path and os.path.exists(args.continue_path):
         sess.load_checkpoint(args.continue_path)
@@ -296,7 +307,7 @@ def main():
     # start session
     clock = sess.clock
     tb_writer = sess.tb_writer
-    sess.save_checkpoint("start.pth.tar")
+    # sess.save_checkpoint("start.pth.tar")
 
     optimizer = optim.Adam(
         sess.net.parameters(),
@@ -310,8 +321,12 @@ def main():
 
     # start training
     for e in range(clock.epoch, args.epochs):
-        train_out = train_model(train_loader, sess.net, optimizer, clock.epoch)
-        valid_out = valid_model(valid_loader, sess.net, optimizer, clock.epoch)
+        train_out = train_model(
+            train_loader, sess.net, optimizer, clock.epoch, args.obj, LOSS_WEIGHTS
+        )
+        valid_out = valid_model(
+            valid_loader, sess.net, optimizer, clock.epoch, args.obj, LOSS_WEIGHTS
+        )
 
         tb_writer.add_scalars(
             "loss",
