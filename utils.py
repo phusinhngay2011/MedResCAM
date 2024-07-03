@@ -102,14 +102,14 @@ class AUCMeter():
         self.auc = None
 
     def add(self, output, target):
-        
+
         if torch.is_tensor(output):
             output = output.cpu().squeeze().detach().numpy()
         if torch.is_tensor(target):
             target = target.cpu().squeeze().detach().numpy()
         elif isinstance(target, numbers.Number):
             target = np.asarray([target])
-        
+
         if np.ndim(output) == 0:
             output = [output]
         assert np.ndim(output) == 1, \
@@ -171,6 +171,31 @@ class AUCMeter():
         plt.ylabel('True Positive Rate')
         plt.xlabel('False Positive Rate')
         plt.savefig(savepath)
+
+
+def calculate_iou(preds, labels, threshold=0.5):
+    """
+    Calculate the Intersection over Union (IoU) for binary segmentation.
+
+    Args:
+    preds (torch.Tensor): Predicted binary masks.
+    labels (torch.Tensor): Ground truth binary masks.
+    threshold (float): Threshold to binarize the predictions.
+
+    Returns:
+    float: IoU score.
+    """
+    # Binarize predictions
+    preds = (preds > threshold).float()
+
+    # Calculate intersection and union
+    intersection = (preds * labels).sum((1, 2))
+    union = preds.sum((1, 2)) + labels.sum((1, 2)) - intersection
+
+    # Compute IoU
+    iou = intersection / union
+
+    return iou.mean().item()
 
 
 def is_valid_image(file_name):

@@ -1,25 +1,19 @@
 import argparse
-import os
-import time
-
 import numbers
-import csv
+import os
+
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision import models
 from tqdm import tqdm
 
 from config import config
 from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
-from sklearn.metrics import roc_auc_score
 
 torch.backends.cudnn.benchmark = True
 LOSS_WEIGHTS = calc_data_weights()
@@ -65,13 +59,13 @@ def train_model(train_loader, model, optimizer, epoch):
     for i, data in enumerate(pbar):
         inputs = data["image"]
         labels = data["label"]
-        # study_type = data["meta_data"]["study_type"]
+        study_type = data["meta_data"]["study_type"]
         # file_paths = data["meta_data"]["file_path"]
         inputs = inputs.to(config.device)
         labels = labels.to(config.device)
 
         weights = [
-            LOSS_WEIGHTS[labels[i]]["Brain_AD"] for i in range(inputs.size(0))
+            LOSS_WEIGHTS[labels[i]][study_type[i]] for i in range(inputs.size(0))
         ]
         # print("weights: {}".format(weights))
         weights = torch.Tensor(weights).view_as(labels).to(config.device)
@@ -167,7 +161,6 @@ def valid_model(valid_loader, model, optimizer, epoch):
             elif isinstance(labels, numbers.Number):
                 labels = np.asarray([labels])
 
-
         pbar.set_description("EPOCH[{}][{}/{}]".format(epoch, k, len(valid_loader)))
         pbar.set_postfix(
             loss=":{:.4f}".format(losses.avg),
@@ -189,7 +182,7 @@ def valid_model(valid_loader, model, optimizer, epoch):
     }
 
     for x in study_out.keys():
-        st_corrects[x[: x.find("_")]] += study_preds[x]
+        st_corrects["Brain"] += study_preds[x]
 
     # acc for each study type
     avg_corrects = {st: st_corrects[st] / nr_stype[st] for st in config.study_type}
@@ -221,13 +214,13 @@ def valid_model(valid_loader, model, optimizer, epoch):
     df = pd.DataFrame(
         {
             "epoch": [epoch],
-            "ELBOW": [avg_corrects["ELBOW"]],
-            "FINGER": [avg_corrects["FINGER"]],
-            "FOREARM": [avg_corrects["FOREARM"]],
-            "HAND": [avg_corrects["HAND"]],
-            "HUMERUS": [avg_corrects["HUMERUS"]],
-            "SHOULDER": [avg_corrects["SHOULDER"]],
-            "WRIST": [avg_corrects["WRIST"]],
+            "Brain": [avg_corrects["Brain"]],
+            # "FINGER": [avg_corrects["FINGER"]],
+            # "FOREARM": [avg_corrects["FOREARM"]],
+            # "HAND": [avg_corrects["HAND"]],
+            # "HUMERUS": [avg_corrects["HUMERUS"]],
+            # "SHOULDER": [avg_corrects["SHOULDER"]],
+            # "WRIST": [avg_corrects["WRIST"]],
             # "FEMUR": [avg_corrects["FEMUR"]],
             # "LEG": [avg_corrects["LEG"]],
             # "KNEE": [avg_corrects["KNEE"]],
@@ -250,7 +243,7 @@ def main():
     parser.add_argument("--epochs", default=50, type=int, help="epoch number")
 
     parser.add_argument(
-        "-b", "--batch_size", default=16, type=int, help="mini-batch size"
+        "-b", "--batch_size", default=8, type=int, help="mini-batch size"
     )
 
     parser.add_argument(
@@ -305,7 +298,11 @@ def main():
     tb_writer = sess.tb_writer
     sess.save_checkpoint("start.pth.tar")
 
-    optimizer = optim.Adam(sess.net.parameters(), args.lr)
+    optimizer = optim.Adam(
+        sess.net.parameters(),
+        lr=args.lr,
+        betas=(0.5, 0.999),
+    )
 
     scheduler = ReduceLROnPlateau(
         optimizer, "max", factor=0.1, patience=10, verbose=True
@@ -340,9 +337,9 @@ def main():
             sess.save_checkpoint("best_model.pth.tar")
 
         # Save after each 5 epoch.
-        sess.save_checkpoint("epoch{}.pth.tar".format(clock.epoch))
+        # sess.save_checkpoint("epoch{}.pth.tar".format(clock.epoch))
 
-        # sess.save_checkpoint("latest.pth.tar")
+        sess.save_checkpoint("latest.pth.tar")
 
         clock.tock()
 

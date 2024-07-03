@@ -88,6 +88,7 @@ class MURA_Dataset(Dataset):
         sample = {"image": image, "label": label, "meta_data": meta_data}
         return sample
 
+
 class BrainMRI_Dataset(Dataset):
 
     def __init__(self, data_dir, csv_file, transform=None):
@@ -112,7 +113,7 @@ class BrainMRI_Dataset(Dataset):
         file_path = os.path.join(self.data_dir, img_filename)
         image = Image.open(file_path).convert("RGB")
         label = self.frame.iloc[idx, 1]
-        study_type = "Brain_AD"
+        study_type = "Brain"
 
         meta_data = {
             "y_true": label,
@@ -126,6 +127,7 @@ class BrainMRI_Dataset(Dataset):
             image = self.transform(image)
         sample = {"image": image, "label": label, "meta_data": meta_data}
         return sample
+
 
 def get_dataloaders(
     name, batch_size, shuffle, num_workers=32, data_dir=config.data_dir
@@ -174,8 +176,8 @@ def get_dataloaders(
     }
 
     image_dataset = BrainMRI_Dataset(
-            data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
-        )
+        data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
+    )
     dataloader = DataLoader(
         image_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
     )
@@ -205,7 +207,7 @@ def calc_data_weights():
         # img_filename = frame.iloc[idx, "path"]
         # print(img_filename)
         # study_type = study_type_re.search(img_filename).group(1)
-        study_type = "Brain_AD"
+        study_type = "Brain"
         label = frame.iloc[idx, 1]
         if label == 1:
             a_t[study_type] += 1

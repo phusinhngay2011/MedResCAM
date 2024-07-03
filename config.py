@@ -2,12 +2,13 @@ import os
 
 import torch
 
-output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam"
+output = "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam"
 # output =  "./output"
+
 
 class Config:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    exp_name = "med-rescam/v0"
+    exp_name = "v0/Brain"
     data_dir = "./data/"
     output_dir = output
     exp_dir = os.path.join(output_dir, exp_name)
@@ -26,7 +27,7 @@ class Config:
         # "FEMUR",
         # "LEG",
         # "KNEE",
-        "Brain_AD"
+        "Brain"
     ]
 
     acc_path = os.path.join(exp_dir, "acc.csv")

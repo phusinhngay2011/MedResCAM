@@ -8,6 +8,8 @@ PATH = Path("./data/Brain_AD/")
 train_imgs = get_all_images(PATH / "test")
 valid_imgs = get_all_images(PATH / "valid")
 
+train_imgs = [img for img in train_imgs if "anomaly_mask" not in img]
+train_imgs = [img for img in valid_imgs if "anomaly_mask" not in img]
 # train
 train_df = pd.DataFrame(
     {

@@ -129,17 +129,17 @@ def heatmap2segment(cam_feature, ori_image):
 
 
 if __name__ == "__main__":
-    abs_path = Path("/home/phu/workspace/thesis/sources/mvfa-ad/data/Bone_AD")
+    # abs_path = Path("/home/phu/workspace/thesis/sources/mvfa-ad/data/Bone_AD")
+    abs_path = Path("outputs/Brain_AD/v0/")
+
     net = resnet50(pretrained=True)
-    net.load_state_dict(
-        torch.load("./models/mura_lqn_v5/best_model.pth (2).tar")["net"]
-    )
+    net.load_state_dict(torch.load("./ckpts/best_model.pth.tar")["net"])
     net = torch.nn.DataParallel(net)
     net = net.cuda()
     net.eval()
 
-    imgs = get_all_images("./data/processed-lqn")
-
+    imgs = get_all_images("./data/Brain_AD/valid")
+    imgs = [img for img in imgs if "anomaly_mask" not in img]
     for img_path in tqdm(imgs, desc="Localize "):
         ori_image = Image.open(img_path).convert("RGB")
 
@@ -147,34 +147,35 @@ if __name__ == "__main__":
         heatmap = localize(cam_feature.copy(), ori_image.copy())
         segment = heatmap2segment(cam_feature, ori_image.convert("L"))
 
-        rbg_path = abs_path / "test" / "Ungood" / "img" / img_path.split("/")[-1]
-        mask_path = (
-            abs_path / "test" / "Ungood" / "anomaly_mask" / img_path.split("/")[-1]
-        )
-        
-        os.makedirs(Path(rbg_path).parent, exist_ok=True)
-        os.makedirs(Path(mask_path).parent, exist_ok=True)
+        # rbg_path = abs_path / "test" / "Ungood" / "img" / img_path.split("/")[-1]
+        # mask_path = (
+        #     abs_path / "test" / "Ungood" / "anomaly_mask" / img_path.split("/")[-1]
+        # )
 
-        ori_image.save(rbg_path)
-        segment.save(mask_path)
-        # imgs = [ori_image, Image.fromarray(np.uint8(heatmap)).convert("RGB"), segment]
+        # os.makedirs(Path(rbg_path).parent, exist_ok=True)
+        # os.makedirs(Path(mask_path).parent, exist_ok=True)
 
-        # # Concat images
-        # widths, heights = zip(*(i.size for i in imgs))
+        # ori_image.save(rbg_path)
+        # segment.save(mask_path)
 
-        # total_width = sum(widths)
-        # max_height = max(heights)
+        imgs = [ori_image, Image.fromarray(np.uint8(heatmap)).convert("RGB"), segment]
 
-        # result = Image.new("RGB", (total_width, max_height))
+        # Concat images
+        widths, heights = zip(*(i.size for i in imgs))
 
-        # x_offset = 0
-        # for im in imgs:
-        #     result.paste(im, (x_offset, 0))
-        #     x_offset += im.size[0]
+        total_width = sum(widths)
+        max_height = max(heights)
 
-        # new_path = img_path.replace("processed-lqn", "test-res-5-best")
-        # os.makedirs(Path(new_path).parent, exist_ok=True)
+        result = Image.new("RGB", (total_width, max_height))
 
-        # cv2.imwrite(new_path, np.array(result))
-        # # print(f"Done {new_path}")
-        # # result2.save(img_path[:-4] + "_w.png")
+        x_offset = 0
+        for im in imgs:
+            result.paste(im, (x_offset, 0))
+            x_offset += im.size[0]
+
+        new_path = abs_path / img_path.split("/")[-1]
+        os.makedirs(new_path.parent, exist_ok=True)
+
+        cv2.imwrite(str(new_path), np.array(result))
+        # print(f"Done {new_path}")
+        # result2.save(img_path[:-4] + "_w.png")
