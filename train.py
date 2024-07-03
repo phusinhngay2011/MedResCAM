@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision import models
 from tqdm import tqdm
 
-from common import config
+from config import config
 from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
@@ -65,14 +65,15 @@ def train_model(train_loader, model, optimizer, epoch):
     for i, data in enumerate(pbar):
         inputs = data["image"]
         labels = data["label"]
-        study_type = data["meta_data"]["study_type"]
-        file_paths = data["meta_data"]["file_path"]
+        # study_type = data["meta_data"]["study_type"]
+        # file_paths = data["meta_data"]["file_path"]
         inputs = inputs.to(config.device)
         labels = labels.to(config.device)
 
         weights = [
-            LOSS_WEIGHTS[labels[i]][study_type[i]] for i in range(inputs.size(0))
+            LOSS_WEIGHTS[labels[i]]["Brain_AD"] for i in range(inputs.size(0))
         ]
+        # print("weights: {}".format(weights))
         weights = torch.Tensor(weights).view_as(labels).to(config.device)
 
         outputs = model(inputs)

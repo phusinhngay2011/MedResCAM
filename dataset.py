@@ -6,7 +6,7 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import warnings
-from common import config
+from config import config
 
 warnings.filterwarnings("ignore")
 
@@ -88,6 +88,48 @@ class MURA_Dataset(Dataset):
         sample = {"image": image, "label": label, "meta_data": meta_data}
         return sample
 
+class BrainMRI_Dataset(Dataset):
+
+    def __init__(self, data_dir, csv_file, transform=None):
+        """
+        :param data_dir: the directory of data
+        :param csv_file: the .csv file of data list
+        :param transform: the transforms exptected to be applied to the data
+        """
+        self.data_dir = data_dir
+        # self.frame = pd.read_csv(os.path.join(data_dir, csv_file), header=None)
+        self.frame = pd.read_csv(
+            os.path.join(data_dir, "Brain_AD", csv_file), header=None
+        )
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.frame)
+
+    def __getitem__(self, idx):
+        img_filename = self.frame.iloc[idx, 0]
+        # print(img_filename)
+        # patient = self._parse_patient(img_filename)
+        # study = self._parse_study(img_filename)
+        # image_num = self._parse_image(img_filename)
+        # study_type = self._parse_study_type(img_filename)
+
+        file_path = os.path.join(self.data_dir, img_filename)
+        # file_path = file_path.replace("MURA-v1.1", "mura")
+        image = Image.open(file_path).convert("RGB")
+        label = self.frame.iloc[idx, 1]
+
+        meta_data = {
+            "y_true": label,
+            "img_filename": img_filename,
+            "file_path": file_path,
+            "study_type": "Brain_AD",
+        }
+
+        if self.transform:
+            image = self.transform(image)
+        sample = {"image": image, "label": label, "meta_data": meta_data}
+        return sample
 
 def get_dataloaders(
     name, batch_size, shuffle, num_workers=32, data_dir=config.data_dir
@@ -134,9 +176,10 @@ def get_dataloaders(
             ]
         ),
     }
-    image_dataset = MURA_Dataset(
-        data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
-    )
+
+    image_dataset = BrainMRI_Dataset(
+            data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
+        )
     dataloader = DataLoader(
         image_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
     )
@@ -148,19 +191,25 @@ def calc_data_weights():
     """
     :return: the weights of positive and negative data of each type of study
     """
-    frame = pd.read_csv("./data/mura/train.csv", header=None)
+    frame = pd.read_csv("./data/Brain_AD/train.csv", header=None)
+    # train_imgs = get_all_images("./data/Brain_AD/test")
+
+    # frame = pd.DataFrame({
+    #     "path": train_imgs,
+    #     "abnormal": [0 if "good" in p else 1 for p in train_imgs]
+    # })
     n_t = {t: 0 for t in config.study_type}
     a_t = {t: 0 for t in config.study_type}
     w_t0 = {t: 0.0 for t in config.study_type}
     w_t1 = {t: 0.0 for t in config.study_type}
 
-    study_type_re = re.compile(r"XR_(\w+)")
+    # study_type_re = re.compile(r"XR_(\w+)")
 
     for idx in range(len(frame)):
-        img_filename = frame.iloc[idx, 0]
+        # img_filename = frame.iloc[idx, "path"]
         # print(img_filename)
-        study_type = study_type_re.search(img_filename).group(1)
-
+        # study_type = study_type_re.search(img_filename).group(1)
+        study_type = "Brain_AD"
         label = frame.iloc[idx, 1]
         if label == 1:
             a_t[study_type] += 1
