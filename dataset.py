@@ -108,22 +108,18 @@ class BrainMRI_Dataset(Dataset):
 
     def __getitem__(self, idx):
         img_filename = self.frame.iloc[idx, 0]
-        # print(img_filename)
-        # patient = self._parse_patient(img_filename)
-        # study = self._parse_study(img_filename)
-        # image_num = self._parse_image(img_filename)
-        # study_type = self._parse_study_type(img_filename)
 
         file_path = os.path.join(self.data_dir, img_filename)
-        # file_path = file_path.replace("MURA-v1.1", "mura")
         image = Image.open(file_path).convert("RGB")
         label = self.frame.iloc[idx, 1]
+        study_type = "Brain_AD"
 
         meta_data = {
             "y_true": label,
             "img_filename": img_filename,
             "file_path": file_path,
-            "study_type": "Brain_AD",
+            "study_type": study_type,
+            "encounter": study_type,
         }
 
         if self.transform:
