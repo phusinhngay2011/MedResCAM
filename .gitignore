@@ -1,1 +1,4 @@
 data/
+outputs/
+ckpts/
+__pycache__/
