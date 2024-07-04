@@ -15,11 +15,12 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchvision import models
 from tqdm import tqdm
 
-from common import config
+from config import config
 from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
 from sklearn.metrics import roc_auc_score
+from pathlib import Path
 
 torch.backends.cudnn.benchmark = True
 LOSS_WEIGHTS = calc_data_weights()
@@ -44,6 +45,8 @@ class Session:
         }
         print("\n")
         print(f"Save ckpt to {ckp_path}...")
+        os.makedirs(Path(ckp_path).parent, exist_ok=True)
+        torch.save(tmp, ckp_path)
         torch.save(tmp, ckp_path)
         print("Done!")
         print("\n")
@@ -235,7 +238,9 @@ def valid_model(valid_loader, model, optimizer, epoch):
         }
     )
     csv_path = (
-        "/".join(config.acc_path.split("/")[:-1]) + "/MURA_" +config.acc_path.split("/")[-1]
+        "/".join(config.acc_path.split("/")[:-1])
+        + "/MURA_"
+        + config.acc_path.split("/")[-1]
     )
     if os.path.isfile(csv_path):
         csv = pd.read_csv(csv_path)
@@ -304,7 +309,7 @@ def main():
     # start session
     clock = sess.clock
     tb_writer = sess.tb_writer
-    sess.save_checkpoint("start.pth.tar")
+    # sess.save_checkpoint("start.pth.tar")
 
     optimizer = optim.Adam(sess.net.parameters(), args.lr)
 
@@ -341,9 +346,9 @@ def main():
             sess.save_checkpoint("best_model.pth.tar")
 
         # Save after each 5 epoch.
-        sess.save_checkpoint("epoch{}.pth.tar".format(clock.epoch))
+        # sess.save_checkpoint("epoch{}.pth.tar".format(clock.epoch))
 
-        # sess.save_checkpoint("latest.pth.tar")
+        sess.save_checkpoint("latest.pth.tar")
 
         clock.tock()
 

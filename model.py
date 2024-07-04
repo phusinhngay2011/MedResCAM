@@ -1,4 +1,4 @@
-from torchvision.models import resnet50 as  ResNet50_Weights
+from torchvision.models import ResNet50_Weights
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo

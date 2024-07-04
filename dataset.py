@@ -4,9 +4,10 @@ import pandas as pd
 import re
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
+from torchvision.transforms import v2
 import warnings
-from common import config
+from config import config
+import torch
 
 warnings.filterwarnings("ignore")
 
@@ -100,37 +101,35 @@ def get_dataloaders(
     :return: the dataloader
     """
     data_transforms = {
-        "train": transforms.Compose(
+        "train": v2.Compose(
             [
-                transforms.Resize((256, 256)),
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
-                transforms.RandomRotation(30),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                v2.ToImage(),
+                v2.Resize((256, 256)),
+                v2.RandomResizedCrop(224),
+                v2.RandomHorizontalFlip(),
+                v2.RandomVerticalFlip(),
+                v2.RandomRotation(30),
+                v2.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.)),
+                v2.ColorJitter(brightness=.5, hue=.3),
+                v2.ToTensor(),
+                v2.ToDtype(torch.float32, scale=True),  # Normalize expects float input
+                v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         ),
-        "valid": transforms.Compose(
+        "valid": v2.Compose(
             [
-                transforms.Resize((256, 256)),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                v2.Resize((256, 256)),
+                v2.CenterCrop(224),
+                v2.ToTensor(),
+                v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         ),
-        "test": transforms.Compose(
+        "test": v2.Compose(
             [
-                transforms.Resize((256, 256)),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                v2.Resize((256, 256)),
+                v2.CenterCrop(224),
+                v2.ToTensor(),
+                v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ]
         ),
     }
