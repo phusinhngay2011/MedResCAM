@@ -1,4 +1,6 @@
+import argparse
 import os
+import shutil
 import cv2
 import numpy as np
 import torch
@@ -108,7 +110,7 @@ def heatmap2segment(cam_feature, ori_image):
     ori_image = np.array(ori_image)
     cam_feature = cv2.resize(cam_feature, (ori_image.shape[1], ori_image.shape[0]))
 
-    crop = np.uint8(cam_feature > 0.7 * 255)
+    crop = np.uint8(cam_feature > 0.8 * 255)
 
     (totalLabels, label_ids, values, centroid) = (
         cv2.connectedComponentsWithStatsWithAlgorithm(crop, 4, cv2.CV_32S, ccltype=1)
@@ -129,16 +131,25 @@ def heatmap2segment(cam_feature, ori_image):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--obj", default="Brain", type=str, help="Obj")
+    parser.add_argument("--type", default="best", type=str, help="best or latest")
+    args = parser.parse_args()
+
+    print(args)
     # abs_path = Path("/home/phu/workspace/thesis/sources/mvfa-ad/data/Bone_AD")
-    abs_path = Path("outputs/Brain_AD/v0/")
+    abs_path = Path(f"outputs/{args.obj}_AD/v0/")
+    if os.path.exists(abs_path):
+        shutil.rmtree(abs_path)
 
     net = resnet50(pretrained=True)
-    net.load_state_dict(torch.load("./ckpts/v0/brain/best_model.pth (1).tar")["net"])
+    ckpt_file = "best_model" if args.type == "best" else "latest"
+    net.load_state_dict(torch.load(f"./ckpts/v0/{args.obj}/{ckpt_file}.pth.tar")["net"])
     net = torch.nn.DataParallel(net)
     net = net.cuda()
     net.eval()
 
-    imgs = get_all_images("./data/Brain_AD/valid/")
+    imgs = get_all_images(f"./data/{args.obj}_AD/valid/")
     imgs = [img for img in imgs if "anomaly_mask" not in img and "Ungood" in img]
     for img_path in tqdm(imgs, desc="Localize "):
         ori_image = Image.open(img_path).convert("RGB")

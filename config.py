@@ -8,7 +8,7 @@ output = "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam"
 
 class Config:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    exp_name = "v0/Brain"
+    exp_name = "v0/"
     data_dir = "./data/"
     output_dir = output
     exp_dir = os.path.join(output_dir, exp_name)
@@ -28,7 +28,6 @@ class Config:
         # "FEMUR",
         # "LEG",
         # "KNEE",
-
         "Brain",
         "Liver",
         "Retina_RESC",

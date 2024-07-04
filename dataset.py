@@ -194,6 +194,7 @@ def calc_data_weights(obj):
     """
     frame = pd.read_csv(f"./data/{obj}_AD/train.csv", header=None)
     print(frame)
+    config.study_type = [obj]
     n_t = {t: 0 for t in config.study_type}
     a_t = {t: 0 for t in config.study_type}
     w_t0 = {t: 0.0 for t in config.study_type}

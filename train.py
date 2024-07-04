@@ -15,6 +15,7 @@ from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
 from pathlib import Path
+
 torch.backends.cudnn.benchmark = True
 
 
@@ -22,8 +23,8 @@ class Session:
 
     def __init__(self, obj, config, net=None):
         self.obj = obj
-        self.log_dir = os.path.join(self.log_dir, self.obj)
-        self.model_dir = os.path.join(self.model_dir, self.obj)
+        self.log_dir = os.path.join(config.log_dir, self.obj)
+        self.model_dir = os.path.join(config.model_dir, self.obj)
         self.net = net
         self.best_val_acc = 0.0
         self.tb_writer = SummaryWriter(log_dir=self.log_dir)
@@ -216,7 +217,7 @@ def valid_model(valid_loader, model, optimizer, epoch, obj, LOSS_WEIGHTS):
     df = pd.DataFrame(
         {
             "epoch": [epoch],
-            "Brain": [avg_corrects["Brain"]],
+            obj: [avg_corrects[obj]],
             # "FINGER": [avg_corrects["FINGER"]],
             # "FOREARM": [avg_corrects["FOREARM"]],
             # "HAND": [avg_corrects["HAND"]],
@@ -295,7 +296,9 @@ def main():
     sess = Session(args.obj, config, net=net)
 
     # get dataloader
-    train_loader = get_dataloaders(args.obj, "train", batch_size=args.batch_size, shuffle=True)
+    train_loader = get_dataloaders(
+        args.obj, "train", batch_size=args.batch_size, shuffle=True
+    )
 
     valid_loader = get_dataloaders(
         args.obj, "valid", batch_size=args.batch_size, shuffle=False

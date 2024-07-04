@@ -1,3 +1,4 @@
+import argparse
 import os
 from PIL import Image
 from sklearn.metrics import roc_auc_score
@@ -99,8 +100,13 @@ gt_folder = "data/{}_AD/valid/Ungood/anomaly_mask"
 pd_folder = "outputs/{}_AD/v0/"
 
 if __name__ == "__main__":
-    gt_folder = gt_folder.format("Brain")
-    pd_folder = pd_folder.format("Brain")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--obj", default="Brain", type=str, help="Obj")
+    args = parser.parse_args()
+
+    print(args)
+    gt_folder = gt_folder.format(args.obj)
+    pd_folder = pd_folder.format(args.obj)
     mean_iou = calculate_mean_iou(gt_folder, pd_folder)
     print(f"Mean IoU: {mean_iou:.4f}")
 
