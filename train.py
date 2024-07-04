@@ -28,8 +28,8 @@ LOSS_WEIGHTS = calc_data_weights()
 class Session:
 
     def __init__(self, config, net=None):
-        self.log_dir = config.log_dir
-        self.model_dir = config.model_dir
+        self.log_dir = os.path.join(config.log_dir, "MURA")
+        self.model_dir = os.path.join(config.model_dir, "MURA")
         self.net = net
         self.best_val_acc = 0.0
         self.tb_writer = SummaryWriter(log_dir=self.log_dir)
@@ -166,7 +166,6 @@ def valid_model(valid_loader, model, optimizer, epoch):
             elif isinstance(labels, numbers.Number):
                 labels = np.asarray([labels])
 
-
         pbar.set_description("EPOCH[{}][{}/{}]".format(epoch, k, len(valid_loader)))
         pbar.set_postfix(
             loss=":{:.4f}".format(losses.avg),
@@ -235,11 +234,14 @@ def valid_model(valid_loader, model, optimizer, epoch):
             "epoch_auc": [outspects["epoch_auc"]],
         }
     )
-    if os.path.isfile(config.acc_path):
-        csv = pd.read_csv(config.acc_path)
-        pd.concat([csv, df]).to_csv(config.acc_path, index=False)
+    csv_path = (
+        "/".join(config.acc_path.split("/")[:-1]) + "/MURA_" +config.acc_path.split("/")[-1]
+    )
+    if os.path.isfile(csv_path):
+        csv = pd.read_csv(csv_path)
+        pd.concat([csv, df]).to_csv(csv_path, index=False)
     else:
-        df.to_csv(config.acc_path, index=False)
+        df.to_csv(csv_path, index=False)
 
     return outspects
 

@@ -1,13 +1,7 @@
-import math
-from functools import partial
-from torchvision.models import resnet50 as rn50, ResNet50_Weights
-
-
+from torchvision.models import resnet50 as  ResNet50_Weights
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
-from torch.autograd import Variable
 
 model_urls = {
     "resnet50": "https://download.pytorch.org/models/resnet50-19c8e357.pth",

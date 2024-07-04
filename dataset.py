@@ -68,7 +68,7 @@ class MURA_Dataset(Dataset):
         study_type = self._parse_study_type(img_filename)
 
         file_path = os.path.join(self.data_dir, img_filename)
-        # file_path = file_path.replace("MURA-v1.1", "mura")
+        file_path = file_path.replace("MURA-v1.1", "mura")
         image = Image.open(file_path).convert("RGB")
         label = self.frame.iloc[idx, 1]
 
