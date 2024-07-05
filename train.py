@@ -4,7 +4,6 @@ import time
 
 import numbers
 import csv
-import deeplake
 import numpy as np
 import pandas as pd
 import torch
@@ -69,14 +68,10 @@ def train_model(train_loader, model, optimizer, epoch):
     model.train()
     pbar = tqdm(train_loader)
     for i, data in enumerate(pbar):
-        print("data: ", data)
-        inputs = data["images"]
-        labels = data["study_type"]
-        study_type = data["study_type"]
-        print("inputs ", inputs)
-        print("labels ", labels)
-        print("study_type ", study_type)
-        # file_paths = data["meta_data"]["file_path"]
+        inputs = data["image"]
+        labels = data["label"]
+        study_type = data["meta_data"]["study_type"]
+        file_paths = data["meta_data"]["file_path"]
         inputs = inputs.to(config.device)
         labels = labels.to(config.device)
 
@@ -93,6 +88,10 @@ def train_model(train_loader, model, optimizer, epoch):
         # Change [64] to [64,1]
         labels = labels.unsqueeze(1)
         weights = weights.unsqueeze(1)
+
+        # loss = F.binary_cross_entropy(
+        #     outputs, labels.to(config.device).float(), weights
+        # )
 
         criterion = torch.nn.BCEWithLogitsLoss(weight=weights)
         loss = criterion(outputs, labels.to(config.device).float())
@@ -128,7 +127,7 @@ def valid_model(valid_loader, model, optimizer, epoch):
     nr_stype = {st: 0 for st in config.study_type}
     study_out = {}  # study level output
     study_label = {}  # study level label
-    auc = AUCMeter()
+    # auc = AUCMeter()
 
     all_labels = []
     all_preds = []
@@ -176,18 +175,12 @@ def valid_model(valid_loader, model, optimizer, epoch):
 
             all_labels.extend(labels)
             all_preds.extend(preds)
-        auc = 0.5
-        try:
-            auc = roc_auc_score(labels, preds)
-        except Exception as e:
-            pass
-            # print(f"ROC AUC calculation failed: {e}")
 
         pbar.set_description("EPOCH[{}][{}/{}]".format(epoch, k, len(valid_loader)))
         pbar.set_postfix(
             loss=":{:.4f}".format(losses.avg),
             acc=":{:.4f}".format(accs.avg),
-            auc=":{:.4f}".format(auc),
+            # auc=":{:.4f}".format(roc_auc_score(labels, preds)),
             # kappa=":{:.4f}".format(kappa),
         )
 
@@ -235,12 +228,12 @@ def valid_model(valid_loader, model, optimizer, epoch):
     # Calculate Kappa coefficient
     # preds_binary = (auc_output > 0.5).astype(int)
     kappa = cohen_kappa_score(all_labels, all_preds)
-    # kappa_ci = cohens_kappa(all_labels, all_preds, weights=None, return_results=True)
 
     pbar.set_postfix(auc=":{:.4f}".format(auc_val))
     pbar.set_postfix(kappa=":{:.4f}".format(kappa))
-
     print("AUC: ", auc_val)
+
+    # Print Kappa coefficient and confidence interval
     print(f"Kappa Coefficient: {kappa}")
 
     torch.cuda.empty_cache()
@@ -250,8 +243,6 @@ def valid_model(valid_loader, model, optimizer, epoch):
         "epoch_acc": total_acc,
         "epoch_auc": auc_val,
         "kappa": kappa,
-        # "kappa_ci_lower": kappa_ci[1],
-        # "kappa_ci_upper": kappa_ci[2],
     }
 
     df = pd.DataFrame(
@@ -334,10 +325,8 @@ def main():
     sess = Session(config, net=net)
 
     # get dataloader
-    # train_loader = get_dataloaders("train", batch_size=args.batch_size, shuffle=True)
+    train_loader = get_dataloaders("train", batch_size=args.batch_size, shuffle=True)
 
-    ds = deeplake.load("hub://activeloop/mura-train")
-    train_loader = ds.pytorch(num_workers=8, batch_size=args.batch_size, shuffle=True)
     valid_loader = get_dataloaders("valid", batch_size=args.batch_size, shuffle=False)
 
     if args.continue_path and os.path.exists(args.continue_path):
@@ -356,8 +345,8 @@ def main():
 
     # start training
     for e in range(clock.epoch, args.epochs):
-        train_out = train_model(train_loader, sess.net, optimizer, clock.epoch)
         valid_out = valid_model(valid_loader, sess.net, optimizer, clock.epoch)
+        train_out = train_model(train_loader, sess.net, optimizer, clock.epoch)
 
         tb_writer.add_scalars(
             "loss",

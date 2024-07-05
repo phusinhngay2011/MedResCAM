@@ -2,12 +2,12 @@ import os
 
 import torch
 
-# output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
-output =  "./output-local"
+output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
+# output =  "./output-local"
 
 class Config:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    exp_name = "medrescam"
+    exp_name = "mura-v2"
     data_dir = "./data/"
     output_dir = output
     exp_dir = os.path.join(output_dir, exp_name)
