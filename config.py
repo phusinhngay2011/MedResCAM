@@ -2,8 +2,8 @@ import os
 
 import torch
 
-output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
-# output =  "./output-local"
+# output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
+output =  "./output-local"
 
 class Config:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

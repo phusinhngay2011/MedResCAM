@@ -4,6 +4,7 @@ import time
 
 import numbers
 import csv
+import deeplake
 import numpy as np
 import pandas as pd
 import torch
@@ -21,6 +22,8 @@ from model import resnet50, resnet101
 from utils import AUCMeter, AverageMeter, TrainClock, save_args
 from sklearn.metrics import roc_auc_score
 from pathlib import Path
+from sklearn.metrics import cohen_kappa_score
+from statsmodels.stats.inter_rater import cohens_kappa
 
 torch.backends.cudnn.benchmark = True
 LOSS_WEIGHTS = calc_data_weights()
@@ -66,10 +69,14 @@ def train_model(train_loader, model, optimizer, epoch):
     model.train()
     pbar = tqdm(train_loader)
     for i, data in enumerate(pbar):
-        inputs = data["image"]
-        labels = data["label"]
-        study_type = data["meta_data"]["study_type"]
-        file_paths = data["meta_data"]["file_path"]
+        print("data: ", data)
+        inputs = data["images"]
+        labels = data["study_type"]
+        study_type = data["study_type"]
+        print("inputs ", inputs)
+        print("labels ", labels)
+        print("study_type ", study_type)
+        # file_paths = data["meta_data"]["file_path"]
         inputs = inputs.to(config.device)
         labels = labels.to(config.device)
 
@@ -86,10 +93,6 @@ def train_model(train_loader, model, optimizer, epoch):
         # Change [64] to [64,1]
         labels = labels.unsqueeze(1)
         weights = weights.unsqueeze(1)
-
-        # loss = F.binary_cross_entropy(
-        #     outputs, labels.to(config.device).float(), weights
-        # )
 
         criterion = torch.nn.BCEWithLogitsLoss(weight=weights)
         loss = criterion(outputs, labels.to(config.device).float())
@@ -127,6 +130,9 @@ def valid_model(valid_loader, model, optimizer, epoch):
     study_label = {}  # study level label
     auc = AUCMeter()
 
+    all_labels = []
+    all_preds = []
+
     # evaluate the model
     pbar = tqdm(valid_loader)
     for k, data in enumerate(pbar):
@@ -161,7 +167,6 @@ def valid_model(valid_loader, model, optimizer, epoch):
             acc = corrects.item() / inputs.size(0)
             accs.update(acc, inputs.size(0))
 
-            auc.add(preds, labels)
             if torch.is_tensor(preds):
                 preds = preds.cpu().squeeze().detach().numpy()
             if torch.is_tensor(labels):
@@ -169,11 +174,21 @@ def valid_model(valid_loader, model, optimizer, epoch):
             elif isinstance(labels, numbers.Number):
                 labels = np.asarray([labels])
 
+            all_labels.extend(labels)
+            all_preds.extend(preds)
+        auc = 0.5
+        try:
+            auc = roc_auc_score(labels, preds)
+        except Exception as e:
+            pass
+            # print(f"ROC AUC calculation failed: {e}")
+
         pbar.set_description("EPOCH[{}][{}/{}]".format(epoch, k, len(valid_loader)))
         pbar.set_postfix(
             loss=":{:.4f}".format(losses.avg),
             acc=":{:.4f}".format(accs.avg),
-            auc=":{:.4f}".format(auc.value()[0]),
+            auc=":{:.4f}".format(auc),
+            # kappa=":{:.4f}".format(kappa),
         )
 
         for i in range(len(outputs)):
@@ -206,18 +221,38 @@ def valid_model(valid_loader, model, optimizer, epoch):
     total_acc = total_corrects / total_samples
 
     # auc value
-    final_scores = [np.mean(study_out[x]) for x in study_out.keys()]
-    auc_output = np.array(final_scores)
-    auc_target = np.array(list(study_label.values()))
-    auc.add(auc_output, auc_target)
 
-    auc_val, tpr, fpr = auc.value()
+    # final_scores = [np.mean(study_out[x]) for x in study_out.keys()]
+    # auc_output = np.array(final_scores)
+    # auc_target = np.array(list(study_label.values()))
+    # auc.reset()
+    # auc.add(auc_output, auc_target)
+
+    # auc_val, tpr, fpr = auc.value()
+    auc_val = roc_auc_score(
+        all_labels, all_preds
+    )
+    # Calculate Kappa coefficient
+    # preds_binary = (auc_output > 0.5).astype(int)
+    kappa = cohen_kappa_score(all_labels, all_preds)
+    # kappa_ci = cohens_kappa(all_labels, all_preds, weights=None, return_results=True)
 
     pbar.set_postfix(auc=":{:.4f}".format(auc_val))
+    pbar.set_postfix(kappa=":{:.4f}".format(kappa))
+
+    print("AUC: ", auc_val)
+    print(f"Kappa Coefficient: {kappa}")
 
     torch.cuda.empty_cache()
 
-    outspects = {"epoch_loss": losses.avg, "epoch_acc": total_acc, "epoch_auc": auc_val}
+    outspects = {
+        "epoch_loss": losses.avg,
+        "epoch_acc": total_acc,
+        "epoch_auc": auc_val,
+        "kappa": kappa,
+        # "kappa_ci_lower": kappa_ci[1],
+        # "kappa_ci_upper": kappa_ci[2],
+    }
 
     df = pd.DataFrame(
         {
@@ -299,8 +334,10 @@ def main():
     sess = Session(config, net=net)
 
     # get dataloader
-    train_loader = get_dataloaders("train", batch_size=args.batch_size, shuffle=True)
+    # train_loader = get_dataloaders("train", batch_size=args.batch_size, shuffle=True)
 
+    ds = deeplake.load("hub://activeloop/mura-train")
+    train_loader = ds.pytorch(num_workers=8, batch_size=args.batch_size, shuffle=True)
     valid_loader = get_dataloaders("valid", batch_size=args.batch_size, shuffle=False)
 
     if args.continue_path and os.path.exists(args.continue_path):
