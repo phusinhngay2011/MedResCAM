@@ -234,7 +234,7 @@ def valid_model(valid_loader, model, optimizer, epoch):
     kappa = cohen_kappa_score(all_labels, all_preds)
     kappa_pos = {}
     for pos in pos_labels.keys():
-        kappa_pos[pos] = cohen_kappa_score(pos_labels[pos], all_preds[pos])
+        kappa_pos[pos] = cohen_kappa_score(pos_labels[pos], pos_preds[pos])
 
     pbar.set_postfix(auc=":{:.4f}".format(auc_val))
     pbar.set_postfix(kappa=":{:.4f}".format(kappa))
