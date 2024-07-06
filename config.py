@@ -2,12 +2,12 @@ import os
 
 import torch
 
-output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
-# output =  "./output-local"
+# output =  "/content/drive/MyDrive/Thesis/Sources/storages/med-rescam/v0"
+output =  "./output-local"
 
 class Config:
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    exp_name = "mura-v2"
+    exp_name = "bone"
     data_dir = "./data/"
     output_dir = output
     exp_dir = os.path.join(output_dir, exp_name)
@@ -22,13 +22,10 @@ class Config:
         "HUMERUS",
         "SHOULDER",
         "WRIST",
-        # # New
-        # "FEMUR",
-        # "LEG",
-        # "KNEE",
+        "LEG",
     ]
 
-    acc_path = os.path.join(exp_dir, "acc.csv")
+    acc_path = os.path.join(exp_dir, "results.csv")
 
     def make_dir(self):
         self.exp_dir = os.path.join(output, self.exp_name)

@@ -1,28 +1,21 @@
 import argparse
 import os
-import time
-
 import numbers
-import csv
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchvision import models
 from tqdm import tqdm
 
 from config import config
 from dataset import calc_data_weights, get_dataloaders
 from model import resnet50, resnet101
-from utils import AUCMeter, AverageMeter, TrainClock, save_args
+from utils import  AverageMeter, TrainClock, save_args
 from sklearn.metrics import roc_auc_score
 from pathlib import Path
 from sklearn.metrics import cohen_kappa_score
-from statsmodels.stats.inter_rater import cohens_kappa
 
 torch.backends.cudnn.benchmark = True
 LOSS_WEIGHTS = calc_data_weights()
@@ -31,8 +24,8 @@ LOSS_WEIGHTS = calc_data_weights()
 class Session:
 
     def __init__(self, config, net=None):
-        self.log_dir = os.path.join(config.log_dir, "MURA")
-        self.model_dir = os.path.join(config.model_dir, "MURA")
+        self.log_dir = os.path.join(config.log_dir, "bone")
+        self.model_dir = os.path.join(config.model_dir, "bone")
         self.net = net
         self.best_val_acc = 0.0
         self.tb_writer = SummaryWriter(log_dir=self.log_dir)
@@ -131,6 +124,8 @@ def valid_model(valid_loader, model, optimizer, epoch):
 
     all_labels = []
     all_preds = []
+    pos_labels = {}
+    pos_preds = {}
 
     # evaluate the model
     pbar = tqdm(valid_loader)
@@ -172,6 +167,15 @@ def valid_model(valid_loader, model, optimizer, epoch):
                 labels = labels.cpu().squeeze().detach().numpy()
             elif isinstance(labels, numbers.Number):
                 labels = np.asarray([labels])
+
+            for i, study in enumerate(study_type):
+                if study not in pos_labels:
+                    pos_labels[study] = []
+                if study not in pos_preds:
+                    pos_preds[study] = []
+
+                pos_labels[study].append(labels[i])
+                pos_preds[study].append(preds[i])
 
             all_labels.extend(labels)
             all_preds.extend(preds)
@@ -228,6 +232,9 @@ def valid_model(valid_loader, model, optimizer, epoch):
     # Calculate Kappa coefficient
     # preds_binary = (auc_output > 0.5).astype(int)
     kappa = cohen_kappa_score(all_labels, all_preds)
+    kappa_pos = {}
+    for pos in pos_labels.keys():
+        kappa_pos[pos] = cohen_kappa_score(pos_labels[pos], all_preds[pos])
 
     pbar.set_postfix(auc=":{:.4f}".format(auc_val))
     pbar.set_postfix(kappa=":{:.4f}".format(kappa))
@@ -235,6 +242,9 @@ def valid_model(valid_loader, model, optimizer, epoch):
 
     # Print Kappa coefficient and confidence interval
     print(f"Kappa Coefficient: {kappa}")
+
+    for pos in pos_labels.keys():
+        print(f"Kappa score {pos}: {kappa_pos[pos]}")
 
     torch.cuda.empty_cache()
 
@@ -248,24 +258,31 @@ def valid_model(valid_loader, model, optimizer, epoch):
     df = pd.DataFrame(
         {
             "epoch": [epoch],
-            "ELBOW": [avg_corrects["ELBOW"]],
-            "FINGER": [avg_corrects["FINGER"]],
-            "FOREARM": [avg_corrects["FOREARM"]],
-            "HAND": [avg_corrects["HAND"]],
-            "HUMERUS": [avg_corrects["HUMERUS"]],
-            "SHOULDER": [avg_corrects["SHOULDER"]],
-            "WRIST": [avg_corrects["WRIST"]],
-            # "FEMUR": [avg_corrects["FEMUR"]],
-            # "LEG": [avg_corrects["LEG"]],
-            # "KNEE": [avg_corrects["KNEE"]],
-            "epoch_loss": [outspects["epoch_loss"]],
+            "ACC_ELBOW": [avg_corrects["ELBOW"]],
+            "ACC_FINGER": [avg_corrects["FINGER"]],
+            "ACC_FOREARM": [avg_corrects["FOREARM"]],
+            "ACC_HAND": [avg_corrects["HAND"]],
+            "ACC_HUMERUS": [avg_corrects["HUMERUS"]],
+            "ACC_SHOULDER": [avg_corrects["SHOULDER"]],
+            "ACC_WRIST": [avg_corrects["WRIST"]],
+            "ACC_LEG": [avg_corrects["LEG"]],
+            "KAPPA_ELBOW": [kappa_pos["ELBOW"]],
+            "KAPPA_FINGER": [kappa_pos["FINGER"]],
+            "KAPPA_FOREARM": [kappa_pos["FOREARM"]],
+            "KAPPA_HAND": [kappa_pos["HAND"]],
+            "KAPPA_HUMERUS": [kappa_pos["HUMERUS"]],
+            "KAPPA_SHOULDER": [kappa_pos["SHOULDER"]],
+            "KAPPA_WRIST": [kappa_pos["WRIST"]],
+            "KAPPA_LEG": [kappa_pos["LEG"]],
             "epoch_acc": [outspects["epoch_acc"]],
             "epoch_auc": [outspects["epoch_auc"]],
+            "kappa": [kappa],
+            "epoch_loss": [outspects["epoch_loss"]],
         }
     )
     csv_path = (
         "/".join(config.acc_path.split("/")[:-1])
-        + "/MURA_"
+        + "/bone_"
         + config.acc_path.split("/")[-1]
     )
     if os.path.isfile(csv_path):
@@ -345,8 +362,8 @@ def main():
 
     # start training
     for e in range(clock.epoch, args.epochs):
-        valid_out = valid_model(valid_loader, sess.net, optimizer, clock.epoch)
         train_out = train_model(train_loader, sess.net, optimizer, clock.epoch)
+        valid_out = valid_model(valid_loader, sess.net, optimizer, clock.epoch)
 
         tb_writer.add_scalars(
             "loss",

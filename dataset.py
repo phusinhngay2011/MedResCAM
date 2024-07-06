@@ -2,12 +2,14 @@ from __future__ import print_function, division
 import os
 import pandas as pd
 import re
-from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 import warnings
 from config import config
-import torch
+
+from PIL import Image, ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 warnings.filterwarnings("ignore")
 
@@ -26,7 +28,7 @@ class MURA_Dataset(Dataset):
         """
         self.data_dir = data_dir
         # self.frame = pd.read_csv(os.path.join(data_dir, csv_file), header=None)
-        self.frame = pd.read_csv(os.path.join(data_dir, "mura", csv_file), header=None)
+        self.frame = pd.read_csv(os.path.join(data_dir, csv_file), header=None)
         self.transform = transform
 
     def _parse_patient(self, img_filename):
@@ -62,15 +64,15 @@ class MURA_Dataset(Dataset):
 
     def __getitem__(self, idx):
         img_filename = self.frame.iloc[idx, 0]
-        # print(img_filename)
         patient = self._parse_patient(img_filename)
         study = self._parse_study(img_filename)
         image_num = self._parse_image(img_filename)
         study_type = self._parse_study_type(img_filename)
 
         file_path = os.path.join(self.data_dir, img_filename)
-        file_path = file_path.replace("MURA-v1.1", "mura")
+        # file_path = file_path.replace("MURA-v1.1", "mura")
         image = Image.open(file_path).convert("RGB")
+        # image = read_image(file_path, mode=ImageReadMode.RGB).type(torch.FloatType)
         label = self.frame.iloc[idx, 1]
 
         meta_data = {
@@ -107,7 +109,6 @@ def get_dataloaders(
                 transforms.RandomResizedCrop(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomRotation(30),
-                transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0)),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -136,7 +137,7 @@ def get_dataloaders(
         ),
     }
     image_dataset = MURA_Dataset(
-        data_dir=data_dir, csv_file="%s.csv" % name, transform=data_transforms[name]
+        data_dir=data_dir, csv_file=f"bone_{name}.csv", transform=data_transforms[name]
     )
     dataloader = DataLoader(
         image_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
@@ -149,7 +150,7 @@ def calc_data_weights():
     """
     :return: the weights of positive and negative data of each type of study
     """
-    frame = pd.read_csv("./data/mura/train.csv", header=None)
+    frame = pd.read_csv("./data/bone_train.csv", header=None)
     n_t = {t: 0 for t in config.study_type}
     a_t = {t: 0 for t in config.study_type}
     w_t0 = {t: 0.0 for t in config.study_type}
