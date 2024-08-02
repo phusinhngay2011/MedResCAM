@@ -240,18 +240,3 @@ def resnet50(pretrained=False, **kwargs):
 
     model = model.cuda()
     return model
-
-
-def resnet101(pretrained=False, **kwargs):
-    """Constructs a ResNet-101 model.
-
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
-    if pretrained:
-        state_dict = model_zoo.load_url(model_urls["resnet101"])
-        state_dict.pop("fc.weight")
-        state_dict.pop("fc.bias")
-        model.load_state_dict(state_dict, strict=False)
-    return model

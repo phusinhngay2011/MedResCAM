@@ -1,15 +1,20 @@
+import csv
+import json
 import os
+from pathlib import Path
+from typing import Tuple
+from xml.dom.expatbuilder import theDOMImplementation
+
 import cv2
 import numpy as np
+import pandas as pd
 import torch
-import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 from tqdm import tqdm
+
 from model import resnet50
 from utils import get_all_images
-from pathlib import Path
-
 
 Trans = transforms.Compose(
     [
@@ -104,11 +109,11 @@ def localize(cam_feature, ori_image):
     return img_with_heatmap
 
 
-def heatmap2segment(cam_feature, ori_image):
+def heatmap2segment(cam_feature, ori_image, threshold=0.8):
     ori_image = np.array(ori_image)
     cam_feature = cv2.resize(cam_feature, (ori_image.shape[1], ori_image.shape[0]))
 
-    crop = np.uint8(cam_feature > 0.75 * 255)
+    crop = np.uint8(cam_feature > threshold * 255)
 
     (totalLabels, label_ids, values, centroid) = (
         cv2.connectedComponentsWithStatsWithAlgorithm(crop, 4, cv2.CV_32S, ccltype=1)
@@ -128,53 +133,155 @@ def heatmap2segment(cam_feature, ori_image):
     return output
 
 
-if __name__ == "__main__":
-    abs_path = Path("/home/phu/workspace/thesis/sources/mvfa-ad/data/Bone_AD")
-    net = resnet50(pretrained=True)
-    net.load_state_dict(
-        torch.load("./models/mura_lqn_v5/best_model.pth (2).tar")["net"]
+def create_abnormal_boundary_line(
+    net,
+    img_path,
+    save_path,
+    threshold = [0.8]
+):
+    # Load and preprocess the original image
+    ori_image = Image.open(img_path).convert("RGB")
+    # Assuming these are functions you have defined elsewhere
+    cam_feature = generate_grad_cam(net, ori_image)
+    heatmap = localize(cam_feature.copy(), ori_image.copy())
+
+    # Create a list of images to concatenate horizontally
+    imgs = [ori_image, Image.fromarray(np.uint8(heatmap)).convert("RGB")]
+
+    for thes in threshold:
+        heatmap_with_contours = heatmap.copy()
+        segment = heatmap2segment(cam_feature, ori_image.convert("L"), thes)
+        segment = segment.convert("L")
+        segment = np.array(segment)
+
+        # Find contours in the thresholded image
+        contours, _ = cv2.findContours(segment, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        cv2.drawContours(heatmap_with_contours, contours, -1, (0, 0, 255), 10)
+
+        # Assuming 'segment' is defined elsewhere in your code
+        segment = Image.fromarray(np.uint8(heatmap_with_contours)).convert(
+            "RGB"
+        )  # Convert heatmap to RGB for PIL
+
+        # Create a list of images to concatenate horizontally
+        imgs.append(segment)
+
+    # Calculate dimensions for the combined image
+    widths, heights = zip(*(i.size for i in imgs))
+    total_width = sum(widths)
+    max_height = max(heights)
+
+    # Create a new image to store the combined result
+    result = Image.new("RGB", (total_width, max_height))
+
+    # Paste each image into the combined result side by side
+    x_offset = 0
+    for im in imgs:
+        result.paste(im, (x_offset, 0))
+        x_offset += im.size[0]
+
+    # Ensure the directory exists where the image will be saved
+    os.makedirs(Path(save_path).parent, exist_ok=True)
+
+    # Save the combined image
+
+    result = np.array(result)
+    # Calculate the dimensions for the borders
+    height, width = result.shape[:2]
+    top_border = int(height / 7.8)  # Top 1/5 of the image
+    bottom_border = height - top_border  # Bottom 1/5 of the image
+
+    # Add black borders to the top and bottom of the image
+    result_with_borders = np.zeros_like(result)
+    result_with_borders[top_border:bottom_border, :, :] = result[
+        top_border:bottom_border, :, :
+    ]
+
+    cv2.imwrite(
+        str(save_path), np.array(result_with_borders), [cv2.IMWRITE_JPEG_QUALITY, 100]
     )
+
+
+def create_segment(net, img_path, seg_path, threshold=0.8):
+    ori_image = Image.open(img_path).convert("RGB")
+    cam_feature = generate_grad_cam(net, ori_image)
+    segment = heatmap2segment(cam_feature, ori_image.convert("L"), threshold)
+    segment.save(seg_path)
+
+
+def predict(net, ori_image):
+    input_image = Trans(ori_image)
+    # Add a Batch Dimension and Move to GPU:
+    input_image = input_image.unsqueeze(0).cuda()
+    outputs = net(input_image)
+    preds = (outputs.data > 0.5).type(torch.cuda.FloatTensor)
+    return preds
+
+
+# false -> abnormal
+# true -> normal
+
+
+def predict_and_create_segment(net, img_path, threshold=0.8):
+    ori_image = Image.open(img_path).convert("RGB")
+    pred = predict(net, ori_image)
+
+    # Abnormal
+    if torch.equal(pred, torch.zeros_like(pred)):
+        cam_feature = generate_grad_cam(net, ori_image)
+        heatmap = localize(cam_feature.copy(), ori_image.copy())
+        segment = heatmap2segment(cam_feature, ori_image.convert("L"), threshold)
+        return (
+            False,
+            ori_image,
+            Image.fromarray(np.uint8(heatmap)).convert("RGB"),
+            segment,
+        )
+    # Normal
+    else:
+        return (True, None, None, None)
+
+
+def create_path_dict(csv_path):
+    path_dict = {}
+    with open(csv_path, newline="") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            index = int(row["Index"])
+            formatted_image_name = "image{:04}.jpg".format(index)
+            path_dict[formatted_image_name] = row["Path"]
+    return path_dict
+
+
+if __name__ == "__main__":
+    visualize_path = Path("./data/test-images")
+    # ds_path = Path("D:/workspace/thesis/sources/mvfa-ad/data/Bone_v2_AD")
+    threshold = [0.5, 0.6, 0.7, 0.8, 0.9]
+
+    # Load the ResNet50 model
+    net = resnet50(pretrained=True)
+    net.load_state_dict(torch.load("./ckpts/v0/Bone/best_model 85.pth.tar")["net"])
     net = torch.nn.DataParallel(net)
     net = net.cuda()
     net.eval()
 
-    imgs = get_all_images("./data/processed-lqn")
+    imgs = get_all_images("./data/test-all")
 
-    for img_path in tqdm(imgs, desc="Localize "):
+    # Testing
+    for i, img_path in tqdm(enumerate(imgs), desc="Localize "):
+
+        # Create boundary line around abnormal regions
+        filename = os.path.basename(img_path)
+        save_path = visualize_path / filename
+
         ori_image = Image.open(img_path).convert("RGB")
-
-        cam_feature = generate_grad_cam(net, ori_image)
-        heatmap = localize(cam_feature.copy(), ori_image.copy())
-        segment = heatmap2segment(cam_feature, ori_image.convert("L"))
-
-        rbg_path = abs_path / "test" / "Ungood" / "img" / img_path.split("/")[-1]
-        mask_path = (
-            abs_path / "test" / "Ungood" / "anomaly_mask" / img_path.split("/")[-1]
-        )
-        
-        os.makedirs(Path(rbg_path).parent, exist_ok=True)
-        os.makedirs(Path(mask_path).parent, exist_ok=True)
-
-        ori_image.save(rbg_path)
-        segment.save(mask_path)
-        # imgs = [ori_image, Image.fromarray(np.uint8(heatmap)).convert("RGB"), segment]
-
-        # # Concat images
-        # widths, heights = zip(*(i.size for i in imgs))
-
-        # total_width = sum(widths)
-        # max_height = max(heights)
-
-        # result = Image.new("RGB", (total_width, max_height))
-
-        # x_offset = 0
-        # for im in imgs:
-        #     result.paste(im, (x_offset, 0))
-        #     x_offset += im.size[0]
-
-        # new_path = img_path.replace("processed-lqn", "test-res-5-best")
-        # os.makedirs(Path(new_path).parent, exist_ok=True)
-
-        # cv2.imwrite(new_path, np.array(result))
-        # # print(f"Done {new_path}")
-        # # result2.save(img_path[:-4] + "_w.png")
+        pred = predict(net, ori_image)
+        print(pred)
+        # Abnormal
+        if torch.equal(pred, torch.zeros_like(pred)):
+            create_abnormal_boundary_line(
+                net, img_path, save_path=save_path, threshold=threshold
+            )
+        else:
+            pass

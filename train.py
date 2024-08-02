@@ -1,21 +1,21 @@
 import argparse
-import os
 import numbers
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.optim as optim
+from sklearn.metrics import cohen_kappa_score, roc_auc_score
 from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
 from config import config
 from dataset import calc_data_weights, get_dataloaders
-from model import resnet50, resnet101
-from utils import  AverageMeter, TrainClock, save_args
-from sklearn.metrics import roc_auc_score
-from pathlib import Path
-from sklearn.metrics import cohen_kappa_score
+from model import resnet50
+from utils import AverageMeter, TrainClock, save_args
 
 torch.backends.cudnn.benchmark = True
 LOSS_WEIGHTS = calc_data_weights()
@@ -24,8 +24,8 @@ LOSS_WEIGHTS = calc_data_weights()
 class Session:
 
     def __init__(self, config, net=None):
-        self.log_dir = os.path.join(config.log_dir, "bone")
-        self.model_dir = os.path.join(config.model_dir, "bone")
+        self.log_dir = os.path.join(config.log_dir, "bone-100")
+        self.model_dir = os.path.join(config.model_dir, "bone-100")
         self.net = net
         self.best_val_acc = 0.0
         self.tb_writer = SummaryWriter(log_dir=self.log_dir)
@@ -226,9 +226,7 @@ def valid_model(valid_loader, model, optimizer, epoch):
     # auc.add(auc_output, auc_target)
 
     # auc_val, tpr, fpr = auc.value()
-    auc_val = roc_auc_score(
-        all_labels, all_preds
-    )
+    auc_val = roc_auc_score(all_labels, all_preds)
     # Calculate Kappa coefficient
     # preds_binary = (auc_output > 0.5).astype(int)
     kappa = cohen_kappa_score(all_labels, all_preds)
@@ -299,7 +297,7 @@ def main():
     parser.add_argument("--epochs", default=50, type=int, help="epoch number")
 
     parser.add_argument(
-        "-b", "--batch_size", default=16, type=int, help="mini-batch size"
+        "-b", "--batch_size", default=8, type=int, help="mini-batch size"
     )
 
     parser.add_argument(
@@ -314,29 +312,18 @@ def main():
         "-c",
         "--continue",
         dest="continue_path",
-        # default="./output/lqn_mura_v3/model/best_model.pth.tar",
         type=str,
         required=False,
     )
     parser.add_argument("--exp_name", default=config.exp_name, type=str, required=False)
 
-    parser.add_argument("--net", default="resnet50", type=str, required=False)
-
-    parser.add_argument(
-        "--local", default=True, action="store_true", help="train local branch"
-    )
     args = parser.parse_args()
     print(args)
 
     config.exp_name = args.exp_name
     config.make_dir()
     save_args(args, config.log_dir)
-
-    # get network
-    if args.net == "resnet50":
-        net = resnet50(pretrained=True)
-    elif args.net == "resnet101":
-        net = resnet101(pretrained=True)
+    net = resnet50(pretrained=True)
 
     net = net.cuda()
     sess = Session(config, net=net)

@@ -187,7 +187,7 @@ def is_valid_image(file_name):
 def get_all_files(dirpath):
     return sum(
         [
-            [os.path.join(os_walks[0], f) for f in os_walks[2]]
+            [os.path.join(os_walks[0], f).replace("\\", "/") for f in os_walks[2]]
             for os_walks in os.walk(dirpath)
         ],
         [],
@@ -200,4 +200,4 @@ def copy(src_path, dst_path):
 
 
 def get_all_images(dirpath):
-    return [p for p in get_all_files(dirpath) if is_valid_image(p)]
+    return [p.replace("\\", "/") for p in get_all_files(dirpath) if is_valid_image(p)]
